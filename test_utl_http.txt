@@ -1,0 +1,439 @@
+SELECT host, lower_port, upper_port, acl
+FROM   dba_network_acls;
+
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.create_acl (
+    acl          => 'test_acl_file.xml', 
+    description  => 'A test of the ACL functionality',
+    principal    => 'FINANCIAL',
+    is_grant     => TRUE, 
+    privilege    => 'connect',
+    start_date   => SYSTIMESTAMP,
+    end_date     => NULL);
+
+  COMMIT;
+END;
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.delete_privilege ( 
+    acl         => 'test_acl_file.xml', 
+    principal   => 'FINANCIAL',
+    is_grant    => FALSE, 
+    privilege   => 'connect');
+
+  COMMIT;
+END;
+
+begin
+DBMS_NETWORK_ACL_ADMIN.assign_acl (
+    acl         => 'test_acl_file.xml',
+    host        => '*', 
+    lower_port  => 1,
+    upper_port  => 9999);
+
+  COMMIT;
+end;
+
+
+
+
+SELECT host, lower_port, upper_port, acl
+FROM   user_network_acls;
+
+SELECT DECODE(
+         DBMS_NETWORK_ACL_ADMIN.check_privilege('test_acl_file.xml', 'FINANCIAL', 'connect'),
+         1, 'GRANTED', 0, 'DENIED', NULL) privilege 
+FROM dual;
+
+SELECT acl,
+       host,
+       DECODE(
+         DBMS_NETWORK_ACL_ADMIN.check_privilege_aclid(aclid, 'FINANCIAL', 'connect'),
+         1, 'GRANTED', 0, 'DENIED', NULL) privilege 
+FROM   dba_network_acls;
+
+
+SELECT 
+UTL_HTTP.REQUEST('http://uk.finance.yahoo.com/q?s=^ftse') from dual
+
+
+SELECT 
+UTL_HTTP.REQUEST('http://uk.finance.yahoo.com/q/cp?s=^FTSE') from dual
+
+SELECT 
+UTL_HTTP.REQUEST('http://l1.yimg.com/bm/combo?fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yui-min-3.5.1.js&amp;fi/common/p/d/static/js/2.0.314593/yui_2.8.0/build/yuiloader-dom-event/2.0.0/mini/yuiloader-dom-event.js&amp;fi/common/p/d/static/js/2.0.314593/yui_2.8.0/build/container/2.0.0/mini/container.js&amp;fi/common/p/d/static/js/2.0.314593/yui_2.8.0/build/datasource/2.0.0/mini/datasource.js&amp;fi/common/p/d/static/js/2.0.314593/yui_2.8.0/build/autocomplete/2.0.0/mini/autocomplete.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/ylc_1.9.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_loader.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_symbol_suggest.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_init_symbol_suggest.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_nav_topnav_init.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_nav_topnav.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_nav_portfolio.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_fb2_expandables.js&amp;fi/common/p/d/static/js/2.0.314593/yui_2.8.0/build/get/2.0.0/mini/get.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfi_lazy_load.js&amp;fi/common/p/d/static/js/2.0.314593/2.0.0/mini/yfs_concat.js&amp;fi/common/p/d/static/js/2.0.314593/translations/2.0.0/mini/yfs_l10n_en-GB.js') from dual
+6,571.68
+
+
+mkdir -p /u01/app/oracle/admin/DB11G/wallet
+
+orapki wallet create -wallet  D:\app\Daniel\admin\orcl\wallet -pwd WalletPasswd123 -auto_login
+
+
+
+DECLARE
+  TYPE vc2_table IS TABLE OF VARCHAR2(256) INDEX BY BINARY_INTEGER;
+  paths VC2_TABLE;
+
+UTL_HTTP.fetch_pages(paths IN vc2_table) AS
+    url_prefix   VARCHAR2(256) := 'http://uk.finance.yahoo.com/q/cp?s=%5EFTSE';
+    req          UTL_HTTP.REQ;
+    resp         UTL_HTTP.RESP;
+    data  VARCHAR2(1024);
+  BEGIN
+    FOR i IN 1..paths.count LOOP
+      req := UTL_HTTP.BEGIN_REQUEST(url_prefix || paths(i));
+      -- Use persistent connection except for the last request
+      IF (i < paths.count) THEN
+        UTL_HTTP.SET_PERSISTENT_CONN_SUPPORT(req, TRUE);
+      END IF;
+      resp := UTL_HTTP.GET_RESPONSE(req);
+      BEGIN
+        LOOP
+          UTL_HTTP.READ_TEXT(resp, data);
+          -- do something with the data
+        END LOOP;
+      EXCEPTION
+        WHEN UTL_HTTP.END_OF_BODY THEN
+          NULL;
+      END;
+      UTL_HTTP.END_RESPONSE(resp);
+    END LOOP;
+  END;
+
+
+create or replace
+    procedure p( p_string in varchar2 )
+    is
+       l_string long default p_string;
+    begin
+       loop
+         exit when l_string is null;
+         dbms_output.put_line( substr( l_string, 1, 250 ) );
+         l_string := substr( l_string, 251 );
+      end loop;
+   end;
+
+
+ declare
+       l_page    utl_http.html_pieces;
+            l_url     varchar2(50) default
+                              'http://uk.finance.yahoo.com/q?s=AAL.L';
+    begin
+        l_page := utl_http.request_pieces( l_url,
+                                           99999
+                                         );
+    
+       for i in 1 .. l_page.count
+       loop
+          p( l_page(i) );
+                   exit when ( i = 3 );
+       end loop;
+   end;
+   /
+
+spool get_page.html
+
+DECLARE
+ req   utl_http.req;
+ resp  utl_http.resp;
+ value VARCHAR2(8192);
+BEGIN
+  req := utl_http.begin_request('http://ichart.finance.yahoo.com/table.csv?s=%5EFTSE&d=1&e=9&f=2014&g=d&a=3&b=2&c=1984&ignore=.csv');
+  utl_http.set_header(req, 'User-Agent', 'Mozilla/4.0');
+  resp := utl_http.get_response(req);
+  LOOP
+    utl_http.read_text(resp, value, 8192);
+    dbms_output.put_line(value);
+  END LOOP;
+  utl_http.end_response(resp);
+EXCEPTION
+  WHEN utl_http.end_of_body THEN
+    utl_http.end_response(resp);
+END;
+/
+
+spool off
+
+DECLARE
+   x   UTL_HTTP.HTML_PIECES;
+   len PLS_INTEGER;
+BEGIN
+   x := UTL_HTTP.REQUEST_PIECES('http://dba-oracle.com/', 100);
+   DBMS_OUTPUT.PUT_LINE(x.count || ' pieces were retrieved.');
+   DBMS_OUTPUT.PUT_LINE('with total length ');
+   IF x.count < 1 THEN
+      DBMS_OUTPUT.PUT_LINE('0');
+  ELSE
+   len := 0;
+   FOR i in 1..x.count LOOP
+      len := len + length(x(i));
+   END LOOP;
+   DBMS_OUTPUT.PUT_LINE(len);
+  END IF;
+END;
+/
+spool off
+
+
+DECLARE
+ req   utl_http.req;
+ resp  utl_http.resp;
+ value VARCHAR2(8192);
+BEGIN
+  req := utl_http.begin_request('http://uk.finance.yahoo.com/q/cp?s=%5EFTSE');
+  utl_http.set_header(req, 'User-Agent', 'Mozilla/4.0');
+  resp := utl_http.get_response(req);
+  LOOP
+    utl_http.read_text(resp, value, 8192);
+    
+    dbms_output.put_line(value);
+  END LOOP;
+  utl_http.end_response(resp);
+EXCEPTION
+  WHEN utl_http.end_of_body THEN
+    utl_http.end_response(resp);
+END;
+
+CREATE TABLE http_clob_test (
+  id    NUMBER(10),
+  url   VARCHAR2(255),
+  data  CLOB,
+  insertdate date,
+  CONSTRAINT http_clob_test_pk PRIMARY KEY (id)
+);
+
+CREATE SEQUENCE http_clob_test_seq;
+
+CREATE OR REPLACE PROCEDURE load_html_from_url1 (p_url  IN  VARCHAR2) AS
+  l_http_request   UTL_HTTP.req;
+  l_http_response  UTL_HTTP.resp;
+  l_clob           CLOB;
+  l_text           VARCHAR2(32767);
+  l_date	   DATE;
+BEGIN
+  -- Initialize the CLOB.
+  DBMS_LOB.createtemporary(l_clob, FALSE);
+
+  -- Make a HTTP request and get the response.
+  l_http_request  := UTL_HTTP.begin_request(p_url);
+  
+  UTL_HTTP.set_header(l_http_request, 'Content-Type', 'application/json');  -- ELIE ADDED
+  
+  l_http_response := UTL_HTTP.get_response(l_http_request);
+
+  -- Copy the response into the CLOB.
+  BEGIN
+    LOOP
+      UTL_HTTP.read_text(l_http_response, l_text, 32766);
+      DBMS_LOB.writeappend (l_clob, LENGTH(l_text), l_text);
+    END LOOP;
+  EXCEPTION
+    WHEN UTL_HTTP.end_of_body THEN
+      UTL_HTTP.end_response(l_http_response);
+  END;
+  SELECT sysdate INTO l_date FROM dual;
+
+  -- Insert the data into the table.
+  INSERT INTO http_clob_test (id, url, data,insertdate)
+  VALUES (http_clob_test_seq.NEXTVAL, p_url, l_clob,l_date);
+
+  -- Relase the resources associated with the temporary LOB.
+  DBMS_LOB.freetemporary(l_clob);
+EXCEPTION
+  WHEN OTHERS THEN
+    UTL_HTTP.end_response(l_http_response);
+    DBMS_LOB.freetemporary(l_clob);
+    RAISE;
+END load_html_from_url1;
+/
+
+create table financialurls (
+	urlkey  number(5) primary key,
+	url	 varchar(2000) not null,
+	description  varchar(2000),
+	csvcolumns number(3),
+	datatable varchar(100,
+	symbol   varchar(10) 
+	)
+
+insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=AAL.L&d=1&e=9&f=2014&g=d&a=4&b=24&c=1999&ignore=.csv',7,'AALHISTORIC','AAL.L')
+/
+
+
+create sequence urlkeys
+MINVALUE 1
+  MAXVALUE 999999999999999999999999999
+  START WITH 1
+  INCREMENT BY 1
+  CACHE 20;
+/
+
+DECLARE
+   url       VARCHAR2(2000);
+BEGIN
+   select url into url from financialurls where urlkey=2;
+   
+   load_html_from_url1(url);
+END;
+
+
+####################### Package and types to read cvs data into a table ######################
+
+create type t_str_array as table of varchar2(4000);
+
+/
+
+ 
+
+create type t_csv_line as object (
+
+  line_number  number,
+
+  line_raw     varchar2(4000),
+
+  c001         varchar2(4000),
+
+  c002         varchar2(4000),
+
+  c003         varchar2(4000),
+
+  c004         varchar2(4000),
+
+  c005         varchar2(4000),
+
+  c006         varchar2(4000),
+
+  c007         varchar2(4000),
+
+  c008         varchar2(4000),
+
+  c009         varchar2(4000),
+
+  c010         varchar2(4000),
+
+  c011         varchar2(4000),
+
+  c012         varchar2(4000),
+
+  c013         varchar2(4000),
+
+  c014         varchar2(4000),
+
+  c015         varchar2(4000),
+
+  c016         varchar2(4000),
+
+  c017         varchar2(4000),
+
+  c018         varchar2(4000),
+
+  c019         varchar2(4000),
+
+  c020         varchar2(4000)
+
+);
+
+/
+
+ 
+
+create type t_csv_tab as table of t_csv_line;
+
+/
+
+DECLARE
+   url       VARCHAR2(2000);
+BEGIN
+   select url into url from financialurls where urlkey=2;
+   
+select * from table(csv_util_pkg.clob_to_csv(httpuritype('http://ichart.finance.yahoo.com/table.csv?s=%5EFTSE&d=1&e=9&f=2014&g=d&a=3&b=2&c=1984&ignore=.csv').getclob()))
+
+
+col col1 format a10
+col col2 format a10
+col col3 format a10
+col col4 format a10
+col col5 format a10
+col col6 format a10
+col col7 format a10
+
+Create table CSVRAW (
+  col1 varchar(100),
+  col2 varchar(100),
+  col3 varchar(100),
+  col4 varchar(100),
+  col5 varchar(100),
+  col6 varchar(100),
+  col7 varchar(100))
+
+create table FTSEHISTORIC (
+  urn number(6),
+  pricedate	date,
+  open	number(6),
+  high	number(6),
+  low 	number(6),
+  close    number(6),
+  volume   number(15),
+  adjclose number(6))
+/
+
+create table AALHISTORIC (
+  urn number(6),
+  pricedate	date,
+  open	number(6),
+  high	number(6),
+  low 	number(6),
+  close    number(6),
+  volume   number(15),
+  adjclose number(6))
+
+create or replace procedure insertfinancialcsvdata(p_symbol varchar)
+is
+   v_url       VARCHAR2(2000);
+   v_datatable VARCHAR(100);
+   v_sqltext   VARCHAR(2000);
+BEGIN
+   select url into v_url from financialurls where symbol= p_symbol;
+   
+   IF v_url is NULL THEN
+        RAISE NO_DATA_FOUND;
+   END IF;
+   select datatable into v_datatable from financialurls where symbol= p_symbol;
+
+   execute immediate 'truncate table CSVRAW';
+
+   insert into CSVRAW (col1, col2,col3,col4,col5,col6,col7)
+ 	select c001, c002, c003, c004,c005,c006,c007
+ 	from table(csv_util_pkg.clob_to_csv(httpuritype(v_url).getclob()));
+
+   v_sqltext := 'truncate table ' || v_datatable ;
+
+   execute immediate v_sqltext;
+
+   v_sqltext := 'insert into ' || v_datatable || ' (urn,pricedate, open,high,low,close,volume,adjclose)
+	select rnum,to_date(col1,''yyyy-mm-dd''),col2,col3,col4,col5,col6,col7 from 
+	( select col1,col2,col3,col4,col5,col6,col7, ROWNUM rnum from 
+  	( select col1,col2,col3,col4,col5,col6,col7 from csvraw ) a )
+	where rnum > 1 and col1 <> ''Date''';
+   dbms_output.put_line(v_sqltext);
+  execute immediate v_sqltext;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE ('No Data Found');
+END;
+
+
+insert into CSVRAW (col1, col2,col3,col4,col5,col6,col7)
+select c001, c002, c003, c004,c005,c006,c007
+from table(csv_util_pkg.clob_to_csv(httpuritype('http://ichart.finance.yahoo.com/table.csv?s=%5EFTSE&d=1&e=9&f=2014&g=d&a=3&b=2&c=1984&ignore=.csv').getclob()))
+
+insert into FTSEHISTORIC (urn,pricedate, open,high,low,close,volume,adjclose)
+select * from csvraw where rownum >1
+
+insert into FTSEHISTORIC (urn,pricedate, open,high,low,close,volume,adjclose)
+select rnum,to_date(col1,'yyyy-mm-dd'),col2,col3,col4,col5,col6,col7 from 
+( select col1,col2,col3,col4,col5,col6,col7, ROWNUM rnum from 
+  ( select col1,col2,col3,col4,col5,col6,col7 from csvraw ) a )
+where rnum > 1 and col1 <> 'Date'
