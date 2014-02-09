@@ -260,7 +260,31 @@ create table financialurls (
 
 insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=AAL.L&d=1&e=9&f=2014&g=d&a=4&b=24&c=1999&ignore=.csv',7,'AALHISTORIC','AAL.L')
 /
+insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol,description) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=ABF.L&d=1&e=9&f=2014&g=d&a=6&b=1&c=1988&ignore=.csv',7,'ABFHISTORIC','ABF.L','Associated British Foods PLC ')
+/
+insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol,description) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=ADM.L&d=1&e=9&f=2014&g=d&a=8&b=23&c=2004&ignore=.csv',7,'ADMHISTORIC','ADM.L','Admiral Group PLC')
+/
+insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol,description) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=ADN.L&d=1&e=9&f=2014&g=d&a=2&b=28&c=1991&ignore=.csv',7,'ADNHISTORIC','ADN.L','Aberdeen Asset Management PLC')
+/
+insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol,description) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=AGK.L&d=1&e=9&f=2014&g=d&a=8&b=29&c=1997&ignore=.csv',7,'AGKHISTORIC','AGK.L','Aggreko PLC')
+/
+insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol,description) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=AHT.L&d=1&e=9&f=2014&g=d&a=6&b=1&c=1988&ignore=.csv',7,'AHTHISTORIC','AHT.L','Ashtead Group PLC')
+/
 
+alter table financialurls add constraint symbol_unique unique (symbol);
+
+CREATE OR REPLACE FUNCTION is_number( p_str IN VARCHAR2 )
+  RETURN VARCHAR2
+IS
+  l_num NUMBER;
+BEGIN
+  l_num := to_number( p_str );
+  RETURN 'Y';
+EXCEPTION
+  WHEN others THEN
+    RETURN 'N';
+END is_number;
+/
 
 create sequence urlkeys
 MINVALUE 1
@@ -388,7 +412,70 @@ create table AALHISTORIC (
   close    number(6),
   volume   number(15),
   adjclose number(6))
+/
 
+create table ABFHISTORIC (
+  urn number(6),
+  pricedate	date,
+  open	number(6),
+  high	number(6),
+  low 	number(6),
+  close    number(6),
+  volume   number(15),
+  adjclose number(6))
+/
+
+create table ABFHISTORIC (
+  urn number(6),
+  pricedate	date,
+  open	number(6),
+  high	number(6),
+  low 	number(6),
+  close    number(6),
+  volume   number(15),
+  adjclose number(6))
+/
+
+create table ABFHISTORIC (
+  urn number(6),
+  pricedate	date,
+  open	number(6),
+  high	number(6),
+  low 	number(6),
+  close    number(6),
+  volume   number(15),
+  adjclose number(6))
+/
+
+create or replace procedure createfinancialtable(p_symbol varchar)
+is
+	v_sqltext   VARCHAR(2000);
+   	v_datatable VARCHAR(100);
+BEGIN
+
+select datatable into v_datatable from financialurls where symbol= p_symbol;
+
+ IF v_datatable is NULL THEN
+        RAISE NO_DATA_FOUND;
+   END IF;
+
+v_sqltext := 'create table ' || v_datatable || ' (
+  urn number(6),
+  pricedate	date,
+  open	number(6),
+  high	number(6),
+  low 	number(6),
+  close    number(6),
+  volume   number(15),
+  adjclose number(6))';
+
+execute immediate v_sqltext;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE ('No Data Found');
+END;
+/
 create or replace procedure insertfinancialcsvdata(p_symbol varchar)
 is
    v_url       VARCHAR2(2000);
@@ -412,11 +499,13 @@ BEGIN
 
    execute immediate v_sqltext;
 
+-- Insert into datatable the raw csv data using REGEXP to check if valid numbers
+--
    v_sqltext := 'insert into ' || v_datatable || ' (urn,pricedate, open,high,low,close,volume,adjclose)
 	select rnum,to_date(col1,''yyyy-mm-dd''),col2,col3,col4,col5,col6,col7 from 
 	( select col1,col2,col3,col4,col5,col6,col7, ROWNUM rnum from 
   	( select col1,col2,col3,col4,col5,col6,col7 from csvraw ) a )
-	where rnum > 1 and col1 <> ''Date''';
+	where REGEXP_LIKE (col2 ,''^-?[[:digit:],.]*$'')';
    dbms_output.put_line(v_sqltext);
   execute immediate v_sqltext;
 EXCEPTION
@@ -437,3 +526,8 @@ select rnum,to_date(col1,'yyyy-mm-dd'),col2,col3,col4,col5,col6,col7 from
 ( select col1,col2,col3,col4,col5,col6,col7, ROWNUM rnum from 
   ( select col1,col2,col3,col4,col5,col6,col7 from csvraw ) a )
 where rnum > 1 and col1 <> 'Date'
+
+select rnum,to_date(col1,'yyyy-mm-dd'),col2,col3,col4,col5,col6,col7 from 
+	( select col1,col2,col3,col4,col5,col6,col7, ROWNUM rnum from 
+  	( select col1,col2,col3,col4,col5,col6,col7 from csvraw ) a )
+	where rnum > 1 and REGEXP_LIKE (col2 ,'^-?[[:digit:],.]*$');
