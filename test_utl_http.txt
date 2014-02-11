@@ -133,14 +133,14 @@ create or replace
    end;
    /
 
-spool get_page.html
+spool get_page.txt
 
 DECLARE
  req   utl_http.req;
  resp  utl_http.resp;
  value VARCHAR2(8192);
 BEGIN
-  req := utl_http.begin_request('http://ichart.finance.yahoo.com/table.csv?s=%5EFTSE&d=1&e=9&f=2014&g=d&a=3&b=2&c=1984&ignore=.csv');
+  req := utl_http.begin_request('http://uk.finance.yahoo.com/q/cp?s=^FTSE');
   utl_http.set_header(req, 'User-Agent', 'Mozilla/4.0');
   resp := utl_http.get_response(req);
   LOOP
@@ -182,7 +182,7 @@ DECLARE
  resp  utl_http.resp;
  value VARCHAR2(8192);
 BEGIN
-  req := utl_http.begin_request('http://uk.finance.yahoo.com/q/cp?s=%5EFTSE');
+  req := utl_http.begin_request('http://uk.finance.yahoo.com/q/cp?s=^FTSE');
   utl_http.set_header(req, 'User-Agent', 'Mozilla/4.0');
   resp := utl_http.get_response(req);
   LOOP
@@ -255,8 +255,14 @@ create table financialurls (
 	description  varchar(2000),
 	csvcolumns number(3),
 	datatable varchar(100,
-	symbol   varchar(10) 
+	symbol   varchar(10),
+	searchstring varchar(100)
 	)
+
+
+insert into financialurls (urlkey  ,url, description, searchstring ) values (urlkeys.nextval,'http://uk.finance.yahoo.com/q/cp?s=^FTSE','FTSE Components Page1','/q?s');
+
+insert into financialurls (urlkey  ,url, description, searchstring ) values (urlkeys.nextval,'http://uk.finance.yahoo.com/q/cp?s=^FTSE&c=1','FTSE Components Page2','/q?s');
 
 insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol) values (urlkeys.nextval,'http://ichart.finance.yahoo.com/table.csv?s=AAL.L&d=1&e=9&f=2014&g=d&a=4&b=24&c=1999&ignore=.csv',7,'AALHISTORIC','AAL.L')
 /
@@ -372,7 +378,7 @@ DECLARE
 BEGIN
    select url into url from financialurls where urlkey=2;
    
-select * from table(csv_util_pkg.clob_to_csv(httpuritype('http://ichart.finance.yahoo.com/table.csv?s=%5EFTSE&d=1&e=9&f=2014&g=d&a=3&b=2&c=1984&ignore=.csv').getclob()))
+select * from table(csv_util_pkg.clob_to_csv(httpuritype('http://uk.finance.yahoo.com/q?s=AAL.L').getclob()))
 
 
 col col1 format a10
@@ -531,3 +537,274 @@ select rnum,to_date(col1,'yyyy-mm-dd'),col2,col3,col4,col5,col6,col7 from
 	( select col1,col2,col3,col4,col5,col6,col7, ROWNUM rnum from 
   	( select col1,col2,col3,col4,col5,col6,col7 from csvraw ) a )
 	where rnum > 1 and REGEXP_LIKE (col2 ,'^-?[[:digit:],.]*$');
+
+
+##### Will return stock price from yahoo finance
+CREATE or REPLACE procedure get_stock_quote (p_ticker varchar)
+is
+/* *****************************************************
+– code from Robert Vollman
+– http://thinkoracle.blogspot.com/2005/08/utlhttp.html
+****************************************************** */
+--_ticker VARCHAR2(4) := ‘BP.L’;
+l_pieces UTL_HTTP.HTML_PIECES;
+l_two_pages VARCHAR2(4000);
+l_start_read NUMBER;
+l_end_read NUMBER;
+l_quote VARCHAR2(12);
+l_url VARCHAR2(200) := ‘http://uk.finance.yahoo.com/q?s=’;
+BEGIN
+	l_pieces := UTL_HTTP.REQUEST_PIECES(l_url||p_ticker, 32);
+	FOR i IN 1 .. l_pieces.COUNT LOOP
+		l_two_pages := l_two_pages || l_pieces(i);
+		-- Look for a string preceding the information we want
+		-- If we find it, add 37 (magic, Yahoo-specific number)
+		-- plus length of ticker
+		-- to find the point where the quote will begin
+		SELECT INSTR(l_two_pages, ‘time_rtq_ticker’, 1, 1) INTO l_start_read FROM dual;
+		IF (l_start_read > 0) THEN
+			l_start_read := l_start_read + 37 + length(p_ticker);
+			IF (l_start_read < 3950) THEN
+				SELECT INSTR(l_two_pages, '<', l_start_read, 1) INTO l_end_read FROM dual;
+				IF (l_end_read > 0) THEN 
+				IF ((l_end_read – l_start_read) < 12) THEN
+					SELECT SUBSTR(l_two_pages, l_start_read, l_end_read – l_start_read) INTO l_quote FROM dual;
+					DBMS_OUTPUT.PUT_LINE(p_ticker||' = '||l_quote||' as of '||to_char(sysdate,'YYYY-MM-DD HH24:MI:SS'));
+				ELSE
+					DBMS_OUTPUT.PUT_LINE('Error (Quote more than 12 chars)');
+				END IF;
+				EXIT;
+				END IF;
+		
+			END IF;
+		END IF;
+	l_two_pages := l_pieces(i);
+	END LOOP;
+END;
+
+
+
+### Below procedure will return all stocks from the component page of yahoo
+###
+CREATE or REPLACE procedure get_stock_symbols_ftse 
+is
+/* *****************************************************
+– code from Daniel Meredith
+– Returns symbols from ftse - Varchar
+****************************************************** */
+l_two_pages VARCHAR2(4000);
+l_start_read NUMBER;
+l_end_read NUMBER;
+l_symbol VARCHAR2(12);
+l_last_read number default 1;
+l_url VARCHAR2(200);
+l_url2 VARCHAR2(200);
+l_search_string VARCHAR(100);
+req   utl_http.req;
+resp  utl_http.resp;
+value VARCHAR2(4000);
+l_length NUMBER;
+l_counter NUMBER;
+BEGIN
+	select url into l_url from financialurls where description = 'FTSE Components Page1';
+
+
+	select searchstring into l_search_string from financialurls where description = 'FTSE Components Page1';
+	
+	req := utl_http.begin_request(l_url);
+  	utl_http.set_header(req, 'User-Agent', 'Mozilla/4.0');
+  	resp := utl_http.get_response(req);
+	l_counter := 0 ;
+	LOOP
+		utl_http.read_text(resp, value, 4000);
+		l_length := 0;
+		l_last_read :=1;
+		l_start_read :=1;
+		WHILE l_length < length(value) 
+		LOOP 
+		SELECT INSTR(value, l_search_string, l_last_read , 1) INTO l_start_read FROM dual;
+		IF (l_start_read > 0) THEN
+			l_start_read := l_start_read + 1 + length(l_search_string);
+			IF (l_start_read < 3950) THEN
+				SELECT INSTR(value, '>', l_start_read, 1)-1 INTO l_end_read FROM dual;
+				IF (l_end_read > 0) THEN 
+					IF ((l_end_read – l_start_read) < 12) THEN
+						SELECT SUBSTR(value, l_start_read, l_end_read – l_start_read) INTO l_symbol FROM dual;
+						DBMS_OUTPUT.PUT_LINE('Symbol = '||l_symbol);
+						l_counter := l_counter + 1;
+						l_last_read := l_end_read ;
+					ELSE
+						DBMS_OUTPUT.PUT_LINE('No more symbols');
+						l_length := length(value);
+					END IF;
+				ELSE
+					DBMS_OUTPUT.PUT_LINE('l_star_read less 3950');
+					l_length := l_last_read ;
+				END IF;
+			ELSE
+				l_length := length(value);
+			END IF;
+		ELSE 
+			l_length := length(value);
+		END IF;
+		END LOOP;
+	END LOOP;
+	utl_http.end_response(resp);
+EXCEPTION
+  WHEN utl_http.end_of_body THEN
+    utl_http.end_response(resp);
+    DBMS_OUTPUT.PUT_LINE(l_counter);
+END;
+
+### Below procedure will return all stocks from the component page of yahoo rewrote with clobs
+###
+
+CREATE OR REPLACE FUNCTION return_clob_from_url (p_url  IN  VARCHAR2) 
+return clob IS
+-- Loads url data into a clob
+  l_clob           CLOB;
+  req   utl_http.req;
+  resp  utl_http.resp;
+  value VARCHAR2(8192);
+BEGIN
+  -- Initialize the CLOB.
+  DBMS_LOB.createtemporary(l_clob, FALSE);
+
+  req := utl_http.begin_request(p_url);
+  
+  utl_http.set_header(req, 'User-Agent', 'Mozilla/4.0');
+  resp := utl_http.get_response(req);
+
+  -- Copy the response into the CLOB.
+    LOOP
+      utl_http.read_text(resp, value, 8192);
+      DBMS_LOB.writeappend (l_clob, LENGTH(value), value);
+    END LOOP;
+  EXCEPTION
+    WHEN UTL_HTTP.end_of_body THEN
+      UTL_HTTP.end_response(resp);
+      return l_clob;
+  END;
+
+
+
+
+CREATE or REPLACE procedure get_stock_symbols_ftse 
+is
+/* *****************************************************
+– code from Daniel Meredith
+– Returns symbols from ftse - clob
+****************************************************** */
+l_two_pages VARCHAR2(4000);
+l_start_read NUMBER;
+l_end_read NUMBER;
+l_price_start NUMBER;
+l_price_end NUMBER;
+l_price VARCHAR(2000);
+l_symbol VARCHAR2(8000);
+l_last_read number default 1;
+l_url VARCHAR2(200);
+l_url2 VARCHAR2(200);
+l_search_string VARCHAR(100);
+req   utl_http.req;
+resp  utl_http.resp;
+value clob;
+value2 clob;
+l_length NUMBER;
+l_counter NUMBER;
+l_offset NUMBER;
+BEGIN
+
+	select url into l_url from financialurls where description = 'FTSE Components Page1';
+
+	select url into l_url2 from financialurls where description = 'FTSE Components Page1';
+
+	select searchstring into l_search_string from financialurls where description = 'FTSE Components Page1';
+	
+	-- initialise clob
+	DBMS_LOB.createtemporary(value, FALSE);
+	DBMS_LOB.createtemporary(value2, FALSE);
+
+	value  := return_clob_from_url(l_url) ;
+	
+	value2 := return_clob_from_url(l_url2); 
+
+	l_counter := 0 ;
+
+		l_length := 0;
+		l_last_read :=1;
+		l_start_read :=1;
+
+	
+		WHILE l_length < length(value) 
+		LOOP 
+		SELECT DBMS_LOB.INSTR(value, l_search_string, l_last_read , 1) INTO l_start_read FROM dual;
+		IF (l_start_read > 0) THEN
+			l_start_read := l_start_read + 1 + length(l_search_string);
+				SELECT DBMS_LOB.INSTR(value, '>', l_start_read, 1)-1 INTO l_end_read FROM dual;
+				IF (l_end_read > 0) THEN 
+					IF ((l_end_read – l_start_read) < 12) THEN
+						-- had to change as amount if second value start position is third
+						-- set offset for substr
+						l_offset := 4;
+						SELECT DBMS_LOB.SUBSTR(value,l_end_read – l_start_read, l_start_read ) INTO l_symbol FROM dual;
+						SELECT DBMS_LOB.INSTR(value, '<b>', l_start_read, 1)-1 INTO l_price_start FROM dual;
+						SELECT DBMS_LOB.INSTR(value, '</b>', l_price_start, 1)-1 INTO l_price_end FROM dual;
+						SELECT DBMS_LOB.SUBSTR(value,l_price_end – (l_price_start+l_offset), l_price_start +l_offset ) INTO l_price FROM dual;
+						DBMS_OUTPUT.PUT_LINE('Symbol = '||l_symbol  || ' Price = ' || l_price);
+						l_counter := l_counter + 1;
+						l_last_read := l_end_read ;
+					ELSE
+						DBMS_OUTPUT.PUT_LINE('No more symbols');
+						l_length := length(value);
+					END IF;
+				ELSE
+					DBMS_OUTPUT.PUT_LINE('l_star_read less 3950');
+					l_length := l_last_read ;
+				END IF;
+		ELSE 
+			l_length := length(value);
+		END IF;
+		END LOOP;
+
+	-- loop for second page of FTSE components
+	
+
+		l_length := 0;
+		l_last_read :=1;
+		l_start_read :=1;
+		l_end_read :=1;
+		WHILE l_length < length(value2) 
+		LOOP 
+		SELECT DBMS_LOB.INSTR(value2, l_search_string, l_last_read , 1) INTO l_start_read FROM dual;
+		IF (l_start_read > 0) THEN
+			l_start_read := l_start_read + 1 + length(l_search_string);
+				SELECT DBMS_LOB.INSTR(value2, '>', l_start_read, 1)-1 INTO l_end_read FROM dual;
+				IF (l_end_read > 0) THEN 
+					IF ((l_end_read – l_start_read) < 12) THEN
+						-- had to change as amount if second value start position is third
+						l_offset := 4;
+						SELECT DBMS_LOB.SUBSTR(value2,l_end_read – l_start_read, l_start_read ) INTO l_symbol FROM dual;
+						SELECT DBMS_LOB.INSTR(value2, '<b>', l_start_read, 1)-1 INTO l_price_start FROM dual;
+						SELECT DBMS_LOB.INSTR(value2, '</b>', l_price_start, 1)-1 INTO l_price_end FROM dual;
+						SELECT DBMS_LOB.SUBSTR(value2,l_price_end – (l_price_start+l_offset), l_price_start +l_offset ) INTO l_price FROM dual;
+						DBMS_OUTPUT.PUT_LINE('Symbol = '||l_symbol  || ' Price = ' || l_price);
+						l_counter := l_counter + 1;
+						l_last_read := l_end_read ;
+					ELSE
+						DBMS_OUTPUT.PUT_LINE('No more symbols');
+						l_length := length(value2);
+					END IF;
+				ELSE
+					DBMS_OUTPUT.PUT_LINE('l_star_read less 3950');
+					l_length := l_last_read ;
+				END IF;
+		ELSE 
+			l_length := length(value2);
+		END IF;
+		END LOOP;
+	
+    DBMS_OUTPUT.PUT_LINE(l_counter);
+END;
+
+select UTL_HTTP.REQUEST_PIECES('http://uk.finance.yahoo.com/q/cp?s=^FTSE', 32) from dual
