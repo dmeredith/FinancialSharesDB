@@ -807,4 +807,228 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE(l_counter);
 END;
 
+###################### Following procedures will create and initialse historic FTSE data
+CREATE or REPLACE procedure init_financial_hist_ftse 
+is
+/* *****************************************************
+– code from Daniel Meredith
+– Uses FTSE symbols to initialise financial url table and populate historic data
+****************************************************** */
+l_two_pages VARCHAR2(4000);
+l_start_read NUMBER;
+l_end_read NUMBER;
+l_symbol VARCHAR2(8000);
+l_table_symbol VARCHAR(10);
+l_last_read number default 1;
+l_url VARCHAR2(200);
+l_url2 VARCHAR2(200);
+l_search_string VARCHAR(100);
+req   utl_http.req;
+resp  utl_http.resp;
+value clob;
+value2 clob;
+l_length NUMBER;
+l_counter NUMBER;
+l_offset NUMBER;
+BEGIN
+
+	select url into l_url from financialurls where description = 'FTSE Components Page1';
+
+	select url into l_url2 from financialurls where description = 'FTSE Components Page2';
+
+	select searchstring into l_search_string from financialurls where description = 'FTSE Components Page1';
+	
+	-- initialise clob
+	DBMS_LOB.createtemporary(value, FALSE);
+	DBMS_LOB.createtemporary(value2, FALSE);
+
+	value  := return_clob_from_url(l_url) ;
+	
+	value2 := return_clob_from_url(l_url2); 
+
+	l_counter := 0 ;
+
+		l_length := 0;
+		l_last_read :=1;
+		l_start_read :=1;
+
+	
+		WHILE l_length < length(value) 
+		LOOP 
+		SELECT DBMS_LOB.INSTR(value, l_search_string, l_last_read , 1) INTO l_start_read FROM dual;
+		IF (l_start_read > 0) THEN
+			l_start_read := l_start_read + 1 + length(l_search_string);
+				SELECT DBMS_LOB.INSTR(value, '>', l_start_read, 1)-1 INTO l_end_read FROM dual;
+				IF (l_end_read > 0) THEN 
+					IF ((l_end_read – l_start_read) < 12) THEN
+						-- had to change as amount if second value start position is third
+						-- set offset for substr
+						l_offset := 4;
+						SELECT DBMS_LOB.SUBSTR(value,l_end_read – l_start_read, l_start_read ) INTO l_symbol FROM dual;
+						IF l_symbol not like '%FTSE%' THEN
+						BEGIN
+							SELECT symbol INTO l_table_symbol FROM financialurls WHERE symbol = l_symbol;
+							IF l_table_symbol IS NOT NULL THEN
+								DBMS_OUTPUT.PUT_LINE('symbol exists' || l_symbol);
+							END IF;
+							EXCEPTION
+								WHEN NO_DATA_FOUND THEN
+								init_financialurl_symbol(l_symbol);
+							
+						END;
+						END IF;
+						l_counter := l_counter + 1;
+						l_last_read := l_end_read ;
+					ELSE
+						DBMS_OUTPUT.PUT_LINE('No more symbols');
+						l_length := length(value);
+					END IF;
+				ELSE
+					DBMS_OUTPUT.PUT_LINE('l_star_read less 3950');
+					l_length := l_last_read ;
+				END IF;
+		ELSE 
+			l_length := length(value);
+		END IF;
+		END LOOP;
+
+	-- loop for second page of FTSE components
+	
+
+		l_length := 0;
+		l_last_read :=1;
+		l_start_read :=1;
+		l_end_read :=1;
+		WHILE l_length < length(value2) 
+		LOOP 
+		SELECT DBMS_LOB.INSTR(value2, l_search_string, l_last_read , 1) INTO l_start_read FROM dual;
+		IF (l_start_read > 0) THEN
+			l_start_read := l_start_read + 1 + length(l_search_string);
+				SELECT DBMS_LOB.INSTR(value2, '>', l_start_read, 1)-1 INTO l_end_read FROM dual;
+				IF (l_end_read > 0) THEN 
+					IF ((l_end_read – l_start_read) < 12) THEN
+						-- had to change as amount if second value start position is third
+						l_offset := 4;
+						SELECT DBMS_LOB.SUBSTR(value2,l_end_read – l_start_read, l_start_read ) INTO l_symbol FROM dual;
+						IF l_symbol not like '%FTSE%' THEN
+						BEGIN
+							SELECT symbol INTO l_table_symbol FROM financialurls WHERE symbol = l_symbol;
+							IF l_table_symbol IS NOT NULL THEN
+								DBMS_OUTPUT.PUT_LINE('symbol exists' || l_symbol);
+							END IF;
+							EXCEPTION
+								WHEN NO_DATA_FOUND THEN
+								init_financialurl_symbol(l_symbol);
+							
+						END;
+						END IF;
+						l_counter := l_counter + 1;
+						l_last_read := l_end_read ;
+					ELSE
+						DBMS_OUTPUT.PUT_LINE('No more symbols');
+						l_length := length(value2);
+					END IF;
+				ELSE
+					DBMS_OUTPUT.PUT_LINE('l_star_read less 3950');
+					l_length := l_last_read ;
+				END IF;
+		ELSE 
+			l_length := length(value2);
+		END IF;
+		END LOOP;
+	
+    DBMS_OUTPUT.PUT_LINE(l_counter);
+EXCEPTION
+	WHEN NO_DATA_FOUND THEN
+	DBMS_OUTPUT.PUT_LINE('NO DATA FOUND');
+END;
+
+create or replace procedure init_financialurl_symbol(p_symbol varchar)
+is
+   v_url       VARCHAR2(2000);
+   v_datatable VARCHAR2(100);
+   v_symbol    VARCHAR2(10);
+   v_sqltext   VARCHAR(2000);
+BEGIN
+
+	-- create varible without . within the symbolstring
+	v_symbol := substr(p_symbol,1,REGEXP_INSTR(p_symbol,'[^[:alpha:]]')-1);
+	DBMS_OUTPUT.PUT_LINE(v_symbol);
+
+	v_sqltext := 'insert into financialurls (urlkey  ,url,csvcolumns,datatable,symbol) values ('||urlkeys.nextval ||',''http://ichart.finance.yahoo.com/table.csv?s='|| p_symbol ||''',7, '''|| v_symbol || 'HISTORIC'',''' || p_symbol ||''')';
+
+	execute immediate v_sqltext;
+
+	createfinancialtable(p_symbol);
+
+	insertfinancialcsvdata(p_symbol);
+
+END;
+
+create or replace procedure insertfinancialcsvdata(p_symbol varchar)
+is
+   v_url       VARCHAR2(2000);
+   v_datatable VARCHAR(100);
+   v_sqltext   VARCHAR(2000);
+BEGIN
+   select url into v_url from financialurls where symbol= p_symbol;
+   
+   IF v_url is NULL THEN
+        RAISE NO_DATA_FOUND;
+   END IF;
+   select datatable into v_datatable from financialurls where symbol= p_symbol;
+
+   execute immediate 'truncate table CSVRAW';
+
+   insert into CSVRAW (col1, col2,col3,col4,col5,col6,col7)
+ 	select c001, c002, c003, c004,c005,c006,c007
+ 	from table(csv_util_pkg.clob_to_csv(httpuritype(v_url).getclob()));
+
+   v_sqltext := 'truncate table ' || v_datatable ;
+
+   execute immediate v_sqltext;
+
+-- Insert into datatable the raw csv data using REGEXP to check if valid numbers
+--
+   v_sqltext := 'insert into ' || v_datatable || ' (urn,pricedate, open,high,low,close,volume,adjclose)
+	select rnum,to_date(col1,''yyyy-mm-dd''),col2,col3,col4,col5,col6,col7 from 
+	( select col1,col2,col3,col4,col5,col6,col7, ROWNUM rnum from 
+  	( select col1,col2,col3,col4,col5,col6,col7 from csvraw ) a )
+	where REGEXP_LIKE (col2 ,''^-?[[:digit:],.]*$'')';
+   dbms_output.put_line(v_sqltext);
+  execute immediate v_sqltext;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE ('No Data Found');
+END;
+
+create or replace procedure createfinancialtable(p_symbol varchar)
+is
+	v_sqltext   VARCHAR(2000);
+   	v_datatable VARCHAR(100);
+BEGIN
+
+select datatable into v_datatable from financialurls where symbol= p_symbol;
+
+ IF v_datatable is NULL THEN
+        RAISE NO_DATA_FOUND;
+   END IF;
+
+v_sqltext := 'create table ' || v_datatable || ' (
+  urn number(6),
+  pricedate	date,
+  open	number(6),
+  high	number(6),
+  low 	number(6),
+  close    number(6),
+  volume   number(15),
+  adjclose number(6))';
+
+execute immediate v_sqltext;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE ('No Data Found');
+END;
+
 select UTL_HTTP.REQUEST_PIECES('http://uk.finance.yahoo.com/q/cp?s=^FTSE', 32) from dual
